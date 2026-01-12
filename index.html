@@ -2,46 +2,149 @@
 <html lang="hu">
 <head>
     <meta charset="UTF-8">
-    <title>Hot Rolling Simulator</title>
+    <title>Meleghengerlési Kalkulátor | WASM & Chart</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #e0e0e0; display: flex; justify-content: center; padding: 40px; }
-        .card { background: #2d2d2d; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); width: 400px; border: 1px solid #444; }
-        h2 { color: #00a8ff; text-align: center; margin-bottom: 25px; }
-        label { display: block; margin-bottom: 8px; font-size: 0.9em; color: #aaa; }
-        input { width: 100%; padding: 12px; margin-bottom: 20px; border-radius: 6px; border: 1px solid #444; background: #1e1e1e; color: white; box-sizing: border-box; }
-        button { width: 100%; padding: 14px; background: #00a8ff; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1em; transition: 0.2s; }
-        button:hover { background: #0086cc; }
-        #res { margin-top: 25px; padding: 15px; background: #1e1e1e; border-left: 4px solid #00a8ff; border-radius: 4px; display: none; text-align: center; }
+        :root { --blue: #00a8ff; --bg: #121212; --card: #1e1e1e; --text: #e0e0e0; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .container { background: var(--card); padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 100%; max-width: 500px; border: 1px solid #333; }
+        h2 { color: var(--blue); text-align: center; border-bottom: 2px solid var(--blue); padding-bottom: 10px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .input-group { display: flex; flex-direction: column; }
+        label { font-size: 0.8em; color: #888; margin-bottom: 5px; }
+        input { background: #252525; border: 1px solid #444; color: white; padding: 10px; border-radius: 4px; outline: none; }
+        input:focus { border-color: var(--blue); }
+        button { grid-column: span 2; background: var(--blue); color: white; border: none; padding: 15px; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.3s; }
+        button:hover { background: #0086cc; transform: translateY(-2px); }
+        #result-box { grid-column: span 2; margin-top: 20px; padding: 20px; background: #151515; border-radius: 6px; border-left: 5px solid var(--blue); display: none; }
+        .res-val { font-size: 1.4em; color: var(--blue); font-weight: bold; }
+        #chart-container { width: 100%; max-width: 500px; margin-top: 30px; background: #1e1e1e; padding: 15px; border-radius: 12px; border: 1px solid #333; display: none; }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h2>Rolling Force Estimator</h2>
-    
-    <label>Roll Diameter (mm):</label>
-    <input type="number" id="diam" value="600">
-    
-    <label>Thickness Reduction (mm):</label>
-    <input type="number" id="red" value="15">
+<div class="container">
+    <h2>Hengerlési Erő Becslés</h2>
+    <div class="grid">
+        <div class="input-group">
+            <label>Bemeneti terület (A0) [mm²]</label>
+            <input type="number" id="a0" value="2500">
+        </div>
+        <div class="input-group">
+            <label>Kimeneti terület (A1) [mm²]</label>
+            <input type="number" id="a1" value="2000">
+        </div>
+        <div class="input-group">
+            <label>Alakítási szilárdság (kf) [N/mm²]</label>
+            <input type="number" id="kf" value="130">
+        </div>
+        <div class="input-group">
+            <label>Súrlódási tényező (y)</label>
+            <input type="number" id="y" step="0.01" value="0.35">
+        </div>
+        <div class="input-group">
+            <label>Fordulatszám (N) [1/min]</label>
+            <input type="number" id="n" value="60">
+        </div>
+        <div class="input-group">
+            <label>Max magasság (Δh max) [mm]</label>
+            <input type="number" id="hmax" value="50">
+        </div>
+        <div class="input-group">
+            <label>Henger sugár (r) [mm]</label>
+            <input type="number" id="r" value="300">
+        </div>
+        <div class="input-group">
+            <label>Sebesség (v) [m/s]</label>
+            <input type="number" id="v" step="0.1" value="2.5">
+        </div>
+        <div class="input-group" style="grid-column: span 2;">
+            <label>Termék szélessége (b1) [mm]</label>
+            <input type="number" id="b1" value="100">
+        </div>
 
-    <button onclick="runCalculation()">Run Simulation</button>
+        <button onclick="calculate()">Szimuláció Futtatása</button>
 
-    <div id="res"></div>
+        <div id="result-box">
+            <span>Számított Hengerlési Erő:</span><br>
+            <span id="force-res" class="res-val">0</span> <span class="res-val">kN</span>
+        </div>
+    </div>
+</div>
+
+<div id="chart-container">
+    <canvas id="forceChart"></canvas>
 </div>
 
 <script src="rolling_logic.js"></script>
+
 <script>
-    function runCalculation() {
-        const d = parseFloat(document.getElementById('diam').value);
-        const r = parseFloat(document.getElementById('red').value);
-        
-        // Hívás a WASM modulba
-        const force = Module._calculate_rolling_force(d, r);
-        
-        const resDiv = document.getElementById('res');
-        resDiv.style.display = 'block';
-        resDiv.innerHTML = "<strong>Estimated Force:</strong><br>" + force.toFixed(2) + " kN";
+    let myChart = null;
+
+    function calculate() {
+        // Paraméterek beolvasása
+        const params = ['a0', 'a1', 'kf', 'y', 'n', 'hmax', 'r', 'v', 'b1']
+            .map(id => parseFloat(document.getElementById(id).value));
+
+        // Ellenőrzés, hogy a C kód (WASM) készen áll-e
+        if (typeof Module._calculate_rolling === 'function') {
+            // Fő számítás
+            const force = Module._calculate_rolling(...params);
+            
+            // Eredmény megjelenítése
+            document.getElementById('result-box').style.display = 'block';
+            document.getElementById('force-res').innerText = force.toFixed(2);
+            
+            // Grafikon frissítése
+            generateChart(params);
+        } else {
+            alert("A számítási motor betöltése folyamatban van...");
+        }
+    }
+
+    function generateChart(originalParams) {
+        const ctx = document.getElementById('forceChart').getContext('2d');
+        const radii = [];
+        const forces = [];
+        const currentR = originalParams[6];
+
+        // 10 pont kiszámítása a sugár változása szerint (+/- 50%)
+        for (let i = 0.5; i <= 1.5; i += 0.1) {
+            let testParams = [...originalParams];
+            let testR = currentR * i;
+            testParams[6] = testR; 
+            
+            radii.push(testR.toFixed(0));
+            // Meghívjuk a C függvényt minden egyes pontra a grafikonhoz
+            const f = Module._calculate_rolling(...testParams);
+            forces.push(f.toFixed(2));
+        }
+
+        if (myChart) myChart.destroy();
+        document.getElementById('chart-container').style.display = 'block';
+
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: radii,
+                datasets: [{
+                    label: 'Erő [kN] a Sugár [mm] függvényében',
+                    data: forces,
+                    borderColor: '#00a8ff',
+                    backgroundColor: 'rgba(0, 168, 255, 0.1)',
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { grid: { color: '#333' }, ticks: { color: '#888' } },
+                    x: { title: { display: true, text: 'Henger sugár [mm]', color: '#888' }, grid: { color: '#333' }, ticks: { color: '#888' } }
+                },
+                plugins: { legend: { labels: { color: '#eee' } } }
+            }
+        });
     }
 </script>
 
